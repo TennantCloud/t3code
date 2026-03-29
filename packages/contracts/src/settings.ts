@@ -23,6 +23,11 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+export const DEFAULT_TENNANT_AGENT_MODEL_SELECTION = {
+  provider: "codex" as const,
+  model: "codex-mini-latest",
+};
+
 export const ClientSettingsSchema = Schema.Struct({
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
@@ -80,6 +85,9 @@ export const ServerSettings = Schema.Struct({
       provider: "codex" as const,
       model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
     })),
+  ),
+  tennantAgentModelSelection: ModelSelection.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_TENNANT_AGENT_MODEL_SELECTION),
   ),
 
   // Provider specific settings
@@ -143,6 +151,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  tennantAgentModelSelection: Schema.optionalKey(ModelSelectionPatch),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),

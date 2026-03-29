@@ -3,9 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
+import { AccountSetupDialog } from "../components/AccountSetupDialog";
+import { SignIn } from "../components/auth/SignIn";
 import ThreadSidebar from "../components/Sidebar";
+import { authClient } from "../lib/auth";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { useStore } from "../store";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
@@ -95,6 +99,12 @@ function ChatRouteGlobalShortcuts() {
 
 function ChatRouteLayout() {
   const navigate = useNavigate();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
+  const projects = useStore((store) => store.projects);
+  const threads = useStore((store) => store.threads);
+  const threadsHydrated = useStore((store) => store.threadsHydrated);
+  const shouldShowAccountSetup =
+    threadsHydrated && projects.length === 0 && threads.length === 0;
 
   useEffect(() => {
     const onMenuAction = window.desktopBridge?.onMenuAction;
@@ -112,9 +122,31 @@ function ChatRouteLayout() {
     };
   }, [navigate]);
 
+  if (isSessionPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <p className="text-sm text-muted-foreground">Checking Tennant session…</p>
+      </div>
+    );
+  }
+
+  if (!session?.user) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <header className="border-b border-border px-3 py-2 md:hidden">
+          <span className="text-sm font-medium text-foreground">Tennant Agents</span>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-6">
+          <SignIn />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider defaultOpen>
       <ChatRouteGlobalShortcuts />
+      <AccountSetupDialog key={session.user.id} open={shouldShowAccountSetup} />
       <Sidebar
         side="left"
         collapsible="offcanvas"

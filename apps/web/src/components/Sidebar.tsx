@@ -3,7 +3,9 @@ import {
   ArrowUpDownIcon,
   ChevronRightIcon,
   FolderIcon,
+  GithubIcon,
   GitPullRequestIcon,
+  LogOutIcon,
   PlusIcon,
   RocketIcon,
   SettingsIcon,
@@ -89,6 +91,7 @@ import {
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
+import type { Project, Thread } from "../types";
 import {
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
@@ -102,6 +105,11 @@ import {
 } from "./Sidebar.logic";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
+import {
+  authClient,
+  connectGithub,
+  openLinearConnect,
+} from "~/lib/auth";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -120,6 +128,33 @@ const SIDEBAR_LIST_ANIMATION_OPTIONS = {
 } as const;
 const loadedProjectFaviconSrcs = new Set<string>();
 
+function buildThreadHierarchy(threads: Thread[]) {
+  const threadIds = new Set(threads.map((thread) => String(thread.id)));
+  const childThreadsByParent = new Map<string, Thread[]>();
+  const rootThreads: Thread[] = [];
+
+  for (const thread of threads) {
+    const parentId = thread.parentThreadId ? String(thread.parentThreadId) : null;
+    if (!parentId || !threadIds.has(parentId)) {
+      rootThreads.push(thread);
+      continue;
+    }
+    const siblings = childThreadsByParent.get(parentId) ?? [];
+    siblings.push(thread);
+    childThreadsByParent.set(parentId, siblings);
+  }
+
+  for (const siblings of childThreadsByParent.values()) {
+    siblings.sort((a, b) => {
+      const byDate = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (byDate !== 0) return byDate;
+      return String(b.id).localeCompare(String(a.id));
+    });
+  }
+
+  return { rootThreads, childThreadsByParent };
+}
+
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -128,6 +163,15 @@ function formatRelativeTime(iso: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function initialsForUser(name: string | null | undefined, email: string | null | undefined): string {
+  const source = name?.trim() || email?.trim() || "T";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
 }
 
 interface TerminalStatusIndicator {
@@ -191,7 +235,7 @@ function prStatusIndicator(pr: ThreadPr): PrStatusIndicator | null {
 function T3Wordmark() {
   return (
     <svg
-      aria-label="T3"
+      aria-label="Tennant Agents"
       className="h-2.5 w-auto shrink-0 text-foreground"
       viewBox="15.5309 37 94.3941 56.96"
       xmlns="http://www.w3.org/2000/svg"
@@ -362,6 +406,7 @@ function SortableProjectItem({
 }
 
 export default function Sidebar() {
+  const { data: session } = authClient.useSession();
   const projects = useStore((store) => store.projects);
   const threads = useStore((store) => store.threads);
   const markThreadUnread = useStore((store) => store.markThreadUnread);
@@ -395,6 +440,7 @@ export default function Sidebar() {
   const queryClient = useQueryClient();
   const removeWorktreeMutation = useMutation(gitRemoveWorktreeMutationOptions({ queryClient }));
   const [addingProject, setAddingProject] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [newCwd, setNewCwd] = useState("");
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
@@ -410,6 +456,7 @@ export default function Sidebar() {
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const signedInUser = session?.user ?? null;
   const selectedThreadIds = useThreadSelectionStore((s) => s.selectedThreadIds);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
@@ -423,6 +470,15 @@ export default function Sidebar() {
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
   );
+  const handleSignOut = useCallback(async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    try {
+      await authClient.signOut();
+    } finally {
+      setIsSigningOut(false);
+    }
+  }, [isSigningOut]);
   const threadGitTargets = useMemo(
     () =>
       threads.map((thread) => ({
@@ -552,12 +608,12 @@ export default function Sidebar() {
         }).catch(() => undefined);
       } catch (error) {
         const description =
-          error instanceof Error ? error.message : "An error occurred while adding the project.";
+          error instanceof Error ? error.message : "An error occurred while adding the repository.";
         setIsAddingProject(false);
         if (shouldBrowseForProjectImmediately) {
           toastManager.add({
             type: "error",
-            title: "Failed to add project",
+            title: "Failed to add repository",
             description,
           });
         } else {
@@ -627,7 +683,7 @@ export default function Sidebar() {
 
       const trimmed = newTitle.trim();
       if (trimmed.length === 0) {
-        toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+        toastManager.add({ type: "warning", title: "Task title cannot be empty" });
         finishRename();
         return;
       }
@@ -650,7 +706,7 @@ export default function Sidebar() {
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Failed to rename thread",
+          title: "Failed to rename task",
           description: error instanceof Error ? error.message : "An error occurred.",
         });
       }
@@ -691,7 +747,7 @@ export default function Sidebar() {
         canDeleteWorktree &&
         (await api.dialogs.confirm(
           [
-            "This thread is the only one linked to this worktree:",
+            "This task is the only one linked to this worktree:",
             displayWorktreePath ?? orphanedWorktreePath,
             "",
             "Delete the worktree too?",
@@ -763,7 +819,7 @@ export default function Sidebar() {
         });
         toastManager.add({
           type: "error",
-          title: "Thread deleted, but worktree removal failed",
+          title: "Task deleted, but worktree removal failed",
           description: `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`,
         });
       }
@@ -785,14 +841,14 @@ export default function Sidebar() {
     onCopy: (ctx) => {
       toastManager.add({
         type: "success",
-        title: "Thread ID copied",
+        title: "Task ID copied",
         description: ctx.threadId,
       });
     },
     onError: (error) => {
       toastManager.add({
         type: "error",
-        title: "Failed to copy thread ID",
+        title: "Failed to copy task ID",
         description: error instanceof Error ? error.message : "An error occurred.",
       });
     },
@@ -823,10 +879,10 @@ export default function Sidebar() {
         thread.worktreePath ?? projectCwdById.get(thread.projectId) ?? null;
       const clicked = await api.contextMenu.show(
         [
-          { id: "rename", label: "Rename thread" },
+          { id: "rename", label: "Rename task" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
-          { id: "copy-thread-id", label: "Copy Thread ID" },
+          { id: "copy-thread-id", label: "Copy Task ID" },
           { id: "delete", label: "Delete", destructive: true },
         ],
         position,
@@ -848,7 +904,7 @@ export default function Sidebar() {
           toastManager.add({
             type: "error",
             title: "Path unavailable",
-            description: "This thread does not have a workspace path to copy.",
+            description: "This task does not have a workspace path to copy.",
           });
           return;
         }
@@ -863,8 +919,8 @@ export default function Sidebar() {
       if (appSettings.confirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
           [
-            `Delete thread "${thread.title}"?`,
-            "This permanently clears conversation history for this thread.",
+            `Delete task "${thread.title}"?`,
+            "This permanently clears conversation history for this task.",
           ].join("\n"),
         );
         if (!confirmed) {
@@ -913,8 +969,8 @@ export default function Sidebar() {
       if (appSettings.confirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
           [
-            `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-            "This permanently clears conversation history for these threads.",
+            `Delete ${count} task${count === 1 ? "" : "s"}?`,
+            "This permanently clears conversation history for these tasks.",
           ].join("\n"),
         );
         if (!confirmed) return;
@@ -979,7 +1035,7 @@ export default function Sidebar() {
       const api = readNativeApi();
       if (!api) return;
       const clicked = await api.contextMenu.show(
-        [{ id: "delete", label: "Remove project", destructive: true }],
+        [{ id: "delete", label: "Remove repository", destructive: true }],
         position,
       );
       if (clicked !== "delete") return;
@@ -991,13 +1047,13 @@ export default function Sidebar() {
       if (projectThreads.length > 0) {
         toastManager.add({
           type: "warning",
-          title: "Project is not empty",
-          description: "Delete all threads in this project before removing it.",
+          title: "Repository is not empty",
+          description: "Delete all tasks in this repository before removing it.",
         });
         return;
       }
 
-      const confirmed = await api.dialogs.confirm(`Remove project "${project.name}"?`);
+      const confirmed = await api.dialogs.confirm(`Remove repository "${project.name}"?`);
       if (!confirmed) return;
 
       try {
@@ -1012,11 +1068,12 @@ export default function Sidebar() {
           projectId,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error removing project.";
-        console.error("Failed to remove project", { projectId, error });
+        const message =
+          error instanceof Error ? error.message : "Unknown error removing repository.";
+        console.error("Failed to remove repository", { projectId, error });
         toastManager.add({
           type: "error",
-          title: `Failed to remove "${project.name}"`,
+          title: `Failed to remove repository "${project.name}"`,
           description: message,
         });
       }
@@ -1608,12 +1665,8 @@ export default function Sidebar() {
         <TooltipTrigger
           render={
             <div className="flex min-w-0 flex-1 items-center gap-1 ml-1 cursor-pointer">
-              <T3Wordmark />
-              <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
-                Code
-              </span>
-              <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-                {APP_STAGE_LABEL}
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                Tennant Agents
               </span>
             </div>
           }
@@ -1685,7 +1738,7 @@ export default function Sidebar() {
         <SidebarGroup className="px-2 py-2">
           <div className="mb-1 flex items-center justify-between px-2">
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-              Projects
+              Repositories
             </span>
             <div className="flex items-center gap-1">
               <ProjectSortMenu
@@ -1732,8 +1785,8 @@ export default function Sidebar() {
                   onClick={() => void handlePickFolder()}
                   disabled={isPickingFolder || isAddingProject}
                 >
-                  <FolderIcon className="size-3.5" />
-                  {isPickingFolder ? "Picking folder..." : "Browse for folder"}
+                  <GithubIcon className="size-3.5" />
+                  {isPickingFolder ? "Picking repository..." : "Browse for repository"}
                 </button>
               )}
               <div className="flex gap-1.5">
@@ -1744,7 +1797,7 @@ export default function Sidebar() {
                       ? "border-red-500/70 focus:border-red-500"
                       : "border-border focus:border-ring"
                   }`}
-                  placeholder="/path/to/project"
+                  placeholder="/path/to/repository"
                   value={newCwd}
                   onChange={(event) => {
                     setNewCwd(event.target.value);
@@ -1821,8 +1874,18 @@ export default function Sidebar() {
           )}
 
           {projects.length === 0 && !shouldShowProjectPathEntry && (
-            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
-              No projects yet
+            <div className="px-2 pt-4">
+              <div className="space-y-2 text-center">
+                <p className="text-xs text-muted-foreground/60">No repositories connected yet.</p>
+                <div className="flex flex-col gap-1">
+                  <Button variant="ghost" size="xs" className="w-full justify-center" onClick={() => void connectGithub()}>
+                    Connect GitHub
+                  </Button>
+                  <Button variant="ghost" size="xs" className="w-full justify-center" onClick={openLinearConnect}>
+                    Connect Linear
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </SidebarGroup>
@@ -1831,6 +1894,43 @@ export default function Sidebar() {
       <SidebarSeparator />
       <SidebarFooter className="p-2">
         <SidebarMenu>
+          {signedInUser ? (
+            <SidebarMenuItem>
+              <div className="flex items-center gap-3 px-2 py-2">
+                {signedInUser.image ? (
+                  <img
+                    src={signedInUser.image}
+                    alt=""
+                    className="size-8 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border text-[11px] font-medium text-foreground">
+                    {initialsForUser(signedInUser.name, signedInUser.email)}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {signedInUser.name || "Tennant account"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {signedInUser.email || "Signed in"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 shrink-0 text-muted-foreground/70 hover:text-foreground"
+                  onClick={() => void handleSignOut()}
+                  disabled={isSigningOut}
+                  aria-label="Sign out"
+                  title="Sign out"
+                >
+                  <LogOutIcon className="size-4" />
+                </Button>
+              </div>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
             {isOnSettings ? (
               <SidebarMenuButton

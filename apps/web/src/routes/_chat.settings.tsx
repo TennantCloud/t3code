@@ -25,6 +25,7 @@ import {
   resolveAppModelSelectionState,
 } from "../modelSelection";
 import { APP_VERSION } from "../branding";
+import { connectGithub, hasLinearConnectTarget, openLinearConnect } from "../lib/auth";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsibleContent } from "../components/ui/collapsible";
 import { Input } from "../components/ui/input";
@@ -48,7 +49,10 @@ import { serverConfigQueryOptions, serverQueryKeys } from "../lib/serverReactQue
 import { cn } from "../lib/utils";
 import { formatRelativeTime } from "../timestampFormat";
 import { ensureNativeApi, readNativeApi } from "../nativeApi";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import {
+  DEFAULT_UNIFIED_SETTINGS,
+  DEFAULT_TENNANT_AGENT_MODEL_SELECTION,
+} from "@t3tools/contracts/settings";
 import { Equal } from "effect";
 
 const THEME_OPTIONS = [
@@ -350,6 +354,7 @@ function SettingsRouteView() {
     textGenProvider,
     textGenModel,
   );
+
   const areProviderSettingsDirty = PROVIDER_SETTINGS.some((providerSettings) => {
     const currentSettings = settings.providers[providerSettings.provider];
     const defaultSettings = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
@@ -880,6 +885,81 @@ function SettingsRouteView() {
                       }}
                     />
                   </div>
+                }
+              />
+            </SettingsSection>
+
+            <SettingsSection title="Connections">
+              <SettingsRow
+                title="GitHub"
+                description="Connect your GitHub account to enable repo access and PR creation."
+                control={
+                  <Button size="sm" variant="outline" onClick={() => void connectGithub()}>
+                    Connect GitHub
+                  </Button>
+                }
+              />
+              <SettingsRow
+                title="Linear"
+                description={
+                  !hasLinearConnectTarget()
+                    ? "Linear will open the OAuth docs until a real connect URL is configured."
+                    : "Connect Linear to enable issue intake and task feedback."
+                }
+                control={
+                  <Button size="sm" variant="outline" onClick={openLinearConnect}>
+                    Connect Linear
+                  </Button>
+                }
+              />
+            </SettingsSection>
+
+            <SettingsSection title="Tennant">
+              <SettingsRow
+                title="Agent"
+                description="The agent Tennant uses when executing tasks."
+                resetAction={
+                  settings.tennantAgentModelSelection.provider !==
+                  DEFAULT_TENNANT_AGENT_MODEL_SELECTION.provider ? (
+                    <SettingResetButton
+                      label="agent"
+                      onClick={() => {
+                        updateSettings({
+                          tennantAgentModelSelection: DEFAULT_TENNANT_AGENT_MODEL_SELECTION,
+                        });
+                      }}
+                    />
+                  ) : null
+                }
+                control={
+                  <Select
+                    value={settings.tennantAgentModelSelection.provider}
+                    onValueChange={(value) => {
+                      if (value !== "codex" && value !== "claudeAgent") return;
+                      updateSettings({
+                        tennantAgentModelSelection: {
+                          provider: value,
+                          model: value === "codex" ? "codex-mini-latest" : "claude-sonnet-4-6",
+                        },
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="w-full sm:w-36" aria-label="Tennant agent">
+                      <SelectValue>
+                        {settings.tennantAgentModelSelection.provider === "claudeAgent"
+                          ? "Claude"
+                          : "Codex"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="codex">
+                        Codex
+                      </SelectItem>
+                      <SelectItem hideIndicator value="claudeAgent">
+                        Claude
+                      </SelectItem>
+                    </SelectPopup>
+                  </Select>
                 }
               />
             </SettingsSection>

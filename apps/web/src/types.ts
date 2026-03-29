@@ -79,6 +79,8 @@ export interface TurnDiffSummary {
 
 export interface Project {
   id: ProjectId;
+  kind?: "repository" | undefined;
+  repoSlug?: string | undefined;
   name: string;
   cwd: string;
   defaultModelSelection: ModelSelection | null;
@@ -92,6 +94,9 @@ export interface Thread {
   id: ThreadId;
   codexThreadId: string | null;
   projectId: ProjectId;
+  kind?: "task" | "subthread" | undefined;
+  parentThreadId?: ThreadId | null | undefined;
+  tags?: string[] | undefined;
   title: string;
   modelSelection: ModelSelection;
   runtimeMode: RuntimeMode;

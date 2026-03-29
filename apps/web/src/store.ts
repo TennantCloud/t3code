@@ -128,8 +128,19 @@ function mapProjectsFromReadModel(
 
   const mappedProjects = incoming.map((project) => {
     const existing = previousById.get(project.id) ?? previousByCwd.get(project.workspaceRoot);
+    const rawProject = project as unknown as {
+      kind?: unknown;
+      repoSlug?: unknown;
+    };
+    const kind = rawProject.kind === "repository" ? "repository" : existing?.kind;
+    const repoSlug =
+      typeof rawProject.repoSlug === "string" && rawProject.repoSlug.trim().length > 0
+        ? rawProject.repoSlug
+        : existing?.repoSlug;
     return {
       id: project.id,
+      ...(kind ? { kind } : {}),
+      ...(repoSlug ? { repoSlug } : {}),
       name: project.title,
       cwd: project.workspaceRoot,
       defaultModelSelection:
@@ -231,6 +242,28 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
   return `/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
+function readThreadKind(rawThread: unknown): Thread["kind"] {
+  if (!rawThread || typeof rawThread !== "object") return undefined;
+  const value = (rawThread as { kind?: unknown }).kind;
+  return value === "task" || value === "subthread" ? value : undefined;
+}
+
+function readParentThreadId(rawThread: unknown): Thread["parentThreadId"] {
+  if (!rawThread || typeof rawThread !== "object") return undefined;
+  const value = (rawThread as { parentThreadId?: unknown }).parentThreadId;
+  return typeof value === "string" && value.length > 0
+    ? ThreadId.makeUnsafe(value)
+    : null;
+}
+
+function readThreadTags(rawThread: unknown): Thread["tags"] {
+  if (!rawThread || typeof rawThread !== "object") return undefined;
+  const value = (rawThread as { tags?: unknown }).tags;
+  if (!Array.isArray(value)) return undefined;
+  const tags = value.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
+  return tags.length > 0 ? tags : undefined;
+}
+
 // ── Pure state transition functions ────────────────────────────────────
 
 export function syncServerReadModel(state: AppState, readModel: OrchestrationReadModel): AppState {
@@ -247,6 +280,9 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         id: thread.id,
         codexThreadId: null,
         projectId: thread.projectId,
+        kind: readThreadKind(thread),
+        parentThreadId: readParentThreadId(thread),
+        tags: readThreadTags(thread),
         title: thread.title,
         modelSelection: {
           ...thread.modelSelection,

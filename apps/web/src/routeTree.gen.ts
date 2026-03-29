@@ -13,6 +13,8 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatThreadIdRouteImport } from './routes/_chat.$threadId'
+import { Route as V1LinearCallbackRouteImport } from './routes/v1.linear.callback'
+import { Route as V1GithubCallbackRouteImport } from './routes/v1.github.callback'
 
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
@@ -33,16 +35,30 @@ const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
   path: '/$threadId',
   getParentRoute: () => ChatRoute,
 } as any)
+const V1LinearCallbackRoute = V1LinearCallbackRouteImport.update({
+  id: '/v1/linear/callback',
+  path: '/v1/linear/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1GithubCallbackRoute = V1GithubCallbackRouteImport.update({
+  id: '/v1/github/callback',
+  path: '/v1/github/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/$threadId': typeof ChatThreadIdRoute
   '/settings': typeof ChatSettingsRoute
+  '/v1/github/callback': typeof V1GithubCallbackRoute
+  '/v1/linear/callback': typeof V1LinearCallbackRoute
 }
 export interface FileRoutesByTo {
   '/$threadId': typeof ChatThreadIdRoute
   '/settings': typeof ChatSettingsRoute
   '/': typeof ChatIndexRoute
+  '/v1/github/callback': typeof V1GithubCallbackRoute
+  '/v1/linear/callback': typeof V1LinearCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -50,17 +66,38 @@ export interface FileRoutesById {
   '/_chat/$threadId': typeof ChatThreadIdRoute
   '/_chat/settings': typeof ChatSettingsRoute
   '/_chat/': typeof ChatIndexRoute
+  '/v1/github/callback': typeof V1GithubCallbackRoute
+  '/v1/linear/callback': typeof V1LinearCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$threadId' | '/settings'
+  fullPaths:
+    | '/'
+    | '/$threadId'
+    | '/settings'
+    | '/v1/github/callback'
+    | '/v1/linear/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/$threadId' | '/settings' | '/'
-  id: '__root__' | '/_chat' | '/_chat/$threadId' | '/_chat/settings' | '/_chat/'
+  to:
+    | '/$threadId'
+    | '/settings'
+    | '/'
+    | '/v1/github/callback'
+    | '/v1/linear/callback'
+  id:
+    | '__root__'
+    | '/_chat'
+    | '/_chat/$threadId'
+    | '/_chat/settings'
+    | '/_chat/'
+    | '/v1/github/callback'
+    | '/v1/linear/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  V1GithubCallbackRoute: typeof V1GithubCallbackRoute
+  V1LinearCallbackRoute: typeof V1LinearCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -93,6 +130,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/v1/linear/callback': {
+      id: '/v1/linear/callback'
+      path: '/v1/linear/callback'
+      fullPath: '/v1/linear/callback'
+      preLoaderRoute: typeof V1LinearCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/github/callback': {
+      id: '/v1/github/callback'
+      path: '/v1/github/callback'
+      fullPath: '/v1/github/callback'
+      preLoaderRoute: typeof V1GithubCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -112,6 +163,8 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  V1GithubCallbackRoute: V1GithubCallbackRoute,
+  V1LinearCallbackRoute: V1LinearCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

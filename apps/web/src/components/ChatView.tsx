@@ -147,6 +147,8 @@ import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "./Compose
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import SubIssuesPanel from "./chat/SubIssuesPanel";
+import JudgePanel from "./chat/JudgePanel";
 import { ContextWindowMeter } from "./chat/ContextWindowMeter";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { AVAILABLE_PROVIDER_OPTIONS, ProviderModelPicker } from "./chat/ProviderModelPicker";
@@ -1174,6 +1176,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       },
     });
   }, [diffOpen, navigate, threadId]);
+
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const onToggleTasks = useCallback(() => setTasksOpen((prev) => !prev), []);
 
   const envLocked = Boolean(
     activeThread &&
@@ -3472,18 +3477,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
           <header className="border-b border-border px-3 py-2 md:hidden">
             <div className="flex items-center gap-2">
               <SidebarTrigger className="size-7 shrink-0" />
-              <span className="text-sm font-medium text-foreground">Threads</span>
+              <span className="text-sm font-medium text-foreground">Tasks</span>
             </div>
           </header>
         )}
         {isElectron && (
           <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5">
-            <span className="text-xs text-muted-foreground/50">No active thread</span>
+            <span className="text-xs text-muted-foreground/50">No task selected</span>
           </div>
         )}
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
-            <p className="text-sm">Select a thread or create a new one to get started.</p>
+            <p className="text-sm">Select a task to continue.</p>
           </div>
         </div>
       </div>
@@ -3525,6 +3530,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          tasksOpen={tasksOpen}
+          onToggleTasks={onToggleTasks}
         />
       </header>
 
@@ -3534,6 +3541,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
+      {/* Tasks + Judge panel */}
+      {tasksOpen && (
+        <div className="border-b border-border flex divide-x divide-border">
+          <div className="flex-1 min-w-0">
+            <SubIssuesPanel threadId={activeThread.id} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <JudgePanel threadId={activeThread.id} />
+          </div>
+        </div>
+      )}
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Chat column */}
@@ -3765,7 +3783,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               ? "Add feedback to refine the plan, or leave this blank to implement it"
                               : phase === "disconnected"
                                 ? "Ask for follow-up changes or attach images"
-                                : "Ask anything, @tag files/folders, or use / to show available commands"
+                                : "Ask anything, @tag files/repositories, or use / to show available commands"
                       }
                       disabled={isConnecting || isComposerApprovalState}
                     />
@@ -4025,7 +4043,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                       disabled={isSendBusy || isConnecting}
                                       onClick={() => void onImplementPlanInNewThread()}
                                     >
-                                      Implement in a new thread
+                                      Implement in a new task
                                     </MenuItem>
                                   </MenuPopup>
                                 </Menu>

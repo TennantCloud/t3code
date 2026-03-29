@@ -37,6 +37,10 @@ type DevMode = keyof typeof MODE_ARGS;
 type PortAvailabilityCheck<R = never> = (port: number) => Effect.Effect<boolean, never, R>;
 
 const DEV_RUNNER_MODES = Object.keys(MODE_ARGS) as Array<DevMode>;
+const TURBO_BIN =
+  process.platform === "win32"
+    ? new URL("../node_modules/.bin/turbo.cmd", import.meta.url).pathname
+    : new URL("../node_modules/.bin/turbo", import.meta.url).pathname;
 
 class DevRunnerError extends Data.TaggedError("DevRunnerError")<{
   readonly message: string;
@@ -459,7 +463,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     }
 
     const child = yield* ChildProcess.make(
-      "turbo",
+      TURBO_BIN,
       [...MODE_ARGS[input.mode], ...input.turboArgs],
       {
         stdin: "inherit",
